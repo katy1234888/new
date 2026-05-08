@@ -1,136 +1,159 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
 st.set_page_config(page_title="Logistics Intelligence Platform", layout="wide")
 
-# ------------------ THEME ------------------
-st.markdown("""
-<style>
-.metric-card {padding: 15px; border-radius: 10px; background-color: #111827; color: white;}
-</style>
-""", unsafe_allow_html=True)
+# ---------------- HEADER ----------------
+st.title("📦 Festive Surge Delivery Crisis Dashboard")
+st.caption("End-to-End Diagnostic | Customer Experience | Operational Insights")
 
-# ------------------ HEADER ------------------
-st.title("📦 Logistics Intelligence Platform")
-st.caption("Advanced Analytics • Storytelling • Decision Intelligence")
+# ---------------- SIDEBAR ----------------
+st.sidebar.header("📂 Upload Data")
 
-# ------------------ SIDEBAR ------------------
-st.sidebar.title("⚙️ Control Panel")
 orders_file = st.sidebar.file_uploader("Orders", type=["csv"])
-customers_file = st.sidebar.file_uploader("Customers", type=["csv"])
 nps_file = st.sidebar.file_uploader("NPS", type=["csv"])
 complaints_file = st.sidebar.file_uploader("Complaints", type=["csv"])
 hub_file = st.sidebar.file_uploader("Hub Performance", type=["csv"])
 courier_file = st.sidebar.file_uploader("Courier Performance", type=["csv"])
 
-# ------------------ LOAD ------------------
-if all([orders_file, customers_file, nps_file, complaints_file, hub_file, courier_file]):
+# ---------------- LOAD ----------------
+if all([orders_file, nps_file, complaints_file, hub_file, courier_file]):
 
     @st.cache_data
-    def load_data():
-        return (
-            pd.read_csv(orders_file),
-            pd.read_csv(customers_file),
-            pd.read_csv(nps_file),
-            pd.read_csv(complaints_file),
-            pd.read_csv(hub_file),
-            pd.read_csv(courier_file)
-        )
+    def load():
+        orders = pd.read_csv(orders_file)
+        nps = pd.read_csv(nps_file)
+        complaints = pd.read_csv(complaints_file)
+        hub = pd.read_csv(hub_file)
+        courier = pd.read_csv(courier_file)
+        return orders, nps, complaints, hub, courier
 
-    orders, customers, nps, complaints, hub, courier = load_data()
+    orders, nps, complaints, hub, courier = load()
 
-    # ------------------ PROCESS ------------------
+    # ---------------- PROCESS ----------------
     orders['order_date'] = pd.to_datetime(orders['order_date'])
     orders['promised_date'] = pd.to_datetime(orders['promised_date'])
     orders['delivery_date'] = pd.to_datetime(orders['delivery_date'])
-    orders['delay'] = (orders['delivery_date'] - orders['promised_date']).dt.days
-    orders['sla_breach'] = orders['delay'] > 0
 
-    nps['response_date'] = pd.to_datetime(nps['response_date'])
-    nps['category'] = nps['score'].apply(lambda x: 'Promoter' if x>=9 else ('Passive' if x>=7 else 'Detractor'))
+    orders['delay_days'] = (orders['delivery_date'] - orders['promised_date']).dt.days
+    orders['delayed'] = orders['delay_days'] > 0
 
-    # ------------------ KPI ------------------
+    nps['category'] = nps['score'].apply(lambda x: "Promoter" if x>=9 else ("Passive" if x>=7 else "Detractor"))
+
+    # ---------------- KPIs ----------------
     total_nps = len(nps)
-    promoters = len(nps[nps['category']=='Promoter'])
-    detractors = len(nps[nps['category']=='Detractor'])
+    promoters = len(nps[nps['category']=="Promoter"])
+    detractors = len(nps[nps['category']=="Detractor"])
     nps_score = (promoters/total_nps - detractors/total_nps)*100
-    delay_rate = orders['sla_breach'].mean()
-    complaint_rate = complaints['order_id'].nunique()/orders['order_id'].nunique()
 
-    st.markdown("## 📊 Executive Dashboard")
-    k1, k2, k3 = st.columns(3)
-    k1.metric("NPS", f"{nps_score:.1f}")
-    k2.metric("Delay %", f"{delay_rate*100:.1f}%")
-    k3.metric("Complaint %", f"{complaint_rate*100:.1f}%")
+    delay_rate = orders['delayed'].mean()*100
+    complaint_rate = complaints['order_id'].nunique() / orders['order_id'].nunique() * 100
 
-    # ------------------ TABS ------------------
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Customer", "Operations", "Funnel", "Simulator", "Reports"])
+    # ---------------- EXEC DASHBOARD ----------------
+    st.markdown("## 📊 Executive Summary")
 
-    # ------------------ CUSTOMER ------------------
+    c1, c2, c3 = st.columns(3)
+    c1.metric("NPS Score", f"{nps_score:.1f}")
+    c2.metric("Delay %", f"{delay_rate:.1f}%")
+    c3.metric("Complaint %", f"{complaint_rate:.1f}%")
+
+    st.markdown("---")
+
+    # ---------------- TABS ----------------
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "👥 Customer", "⚙️ Operations", "🌍 Geography", "🔄 Funnel", "🧠 Simulator"
+    ])
+
+    # ---------------- CUSTOMER ----------------
     with tab1:
-        st.subheader("Customer Experience")
+        st.subheader("Customer Sentiment (NPS)")
+
         fig = px.histogram(nps, x="category", color="category")
         st.plotly_chart(fig, use_container_width=True)
 
-        # NPS Trend
-        nps_trend = nps.groupby(nps['response_date'].dt.to_period('M')).size()
-        fig_trend = px.line(x=nps_trend.index.astype(str), y=nps_trend.values, title="NPS Responses Trend")
-        st.plotly_chart(fig_trend, use_container_width=True)
+        st.markdown("""
+        **Insight:**  
+        Detractors dominate → reflects poor delivery experience.
+        """)
 
-    # ------------------ OPERATIONS ------------------
+    # ---------------- OPERATIONS ----------------
     with tab2:
-        st.subheader("Operations Overview")
-        colA, colB = st.columns(2)
+        st.subheader("Delivery Performance")
 
-        with colA:
-            fig_delay = px.pie(orders, names='sla_breach', title="Delivery Performance")
-            st.plotly_chart(fig_delay, use_container_width=True)
+        fig = px.pie(orders, names="delayed", title="Delayed vs On-Time")
+        st.plotly_chart(fig, use_container_width=True)
 
-        with colB:
-            fig_courier = px.bar(courier, x='courier_partner', y='sla_breach_rate', color='courier_partner')
-            st.plotly_chart(fig_courier, use_container_width=True)
+        st.subheader("Courier Performance")
+        fig2 = px.bar(courier, x="partner", y="sla_breach_rate", color="partner")
+        st.plotly_chart(fig2, use_container_width=True)
 
-        hub['on_time_rate'] = hub['on_time_delivery']/hub['total_orders']
-        fig_hub = px.bar(hub, x='city', y='on_time_rate', color='city')
-        st.plotly_chart(fig_hub, use_container_width=True)
+        st.markdown("""
+        **Insight:**  
+        High SLA breaches across all partners → systemic issue  
+        QuickShip shows highest complaints → service quality issue  
+        """)
 
-    # ------------------ FUNNEL ------------------
+    # ---------------- GEOGRAPHY ----------------
     with tab3:
-        st.subheader("Funnel Breakdown")
-        orders_with_complaints = orders.merge(complaints[['order_id']], on='order_id', how='left', indicator=True)
-        orders_with_complaints['has_complaint'] = orders_with_complaints['_merge'] == 'both'
+        st.subheader("Hub Performance (City Level)")
 
-        delayed_orders = orders_with_complaints[orders_with_complaints['sla_breach']]
-        delay_to_complaint = delayed_orders['has_complaint'].mean()
+        fig = px.bar(hub, x="city", y="sla_breach_rate", color="city")
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.metric("Delay → Complaint %", f"{delay_to_complaint*100:.1f}%")
+        st.markdown("""
+        **Insight:**  
+        Tier-2 cities (Indore, Nagpur) are worst affected  
+        Infrastructure unable to handle festive surge  
+        """)
 
-    # ------------------ SIMULATOR ------------------
+    # ---------------- FUNNEL ----------------
     with tab4:
-        st.subheader("Business Impact Simulator")
-        new_delay = st.slider("Target Delay %", 0, 100, 45)
-        new_complaint = st.slider("Target Complaint %", 0, 100, 10)
+        st.subheader("Customer Journey Funnel")
 
-        projected_nps = -63 + (82-new_delay)*0.8
-        st.success(f"Projected NPS: {projected_nps:.1f}")
+        merged = orders.merge(complaints[['order_id']], on="order_id", how="left", indicator=True)
+        merged['complaint'] = merged['_merge']=="both"
 
-    # ------------------ REPORTS ------------------
+        delayed = merged[merged['delayed']]
+        conversion = delayed['complaint'].mean()*100
+
+        st.metric("Delay → Complaint Conversion", f"{conversion:.1f}%")
+
+        st.markdown("""
+        **Insight:**  
+        Delays directly convert into complaints → then detractors  
+        Core problem lies in delivery reliability  
+        """)
+
+    # ---------------- SIMULATOR ----------------
     with tab5:
-        st.subheader("Download Reports")
+        st.subheader("Business Impact Simulator")
 
-        report = pd.DataFrame({
-            'Metric': ['NPS', 'Delay %', 'Complaint %'],
-            'Value': [nps_score, delay_rate*100, complaint_rate*100]
-        })
+        new_delay = st.slider("Target Delay %", 0, 100, int(delay_rate))
+        new_complaint = st.slider("Target Complaint %", 0, 100, int(complaint_rate))
 
-        csv = report.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download KPI Report", csv, "kpi_report.csv", "text/csv")
+        projected_nps = -63 + (82 - new_delay)*0.8
 
-    # ------------------ FOOTER ------------------
+        st.success(f"📈 Projected NPS: {projected_nps:.1f}")
+
+        st.markdown("""
+        **Insight:**  
+        Reducing delays has the highest impact on NPS  
+        Operational fixes → measurable business gains  
+        """)
+
+    # ---------------- FINAL INSIGHTS ----------------
     st.markdown("---")
-    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    st.markdown("## 💡 Key Takeaways")
+
+    st.markdown("""
+    - 82% delays are the root cause of poor customer experience  
+    - Tier-2 hubs (Indore, Nagpur) are key bottlenecks  
+    - Courier inefficiencies worsen service quality  
+    - Delay → Complaint → Detractor is the main funnel  
+
+    👉 Fix operations → Improve NPS → Drive growth  
+    """)
 
 else:
-    st.warning("Upload all 6 datasets to unlock full platform")
+    st.warning("Upload all required datasets to view dashboard")
